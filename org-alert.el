@@ -52,6 +52,9 @@
 (defvar org-alert-headline-regexp "\\(Sched.+:.+\\|Deadline:.+\\)"
   "Regexp for headlines to search in agenda buffer.")
 
+(defvar org-alert-notify-cutoff 10
+  "Number of minutes before a deadline to send a notification")
+
 (defun org-alert--strip-prefix (headline)
   "Remove the scheduled/deadline prefix from HEADLINE."
   (replace-regexp-in-string ".*:\s+" "" headline))
@@ -89,30 +92,36 @@
 
 
 (defun org-alert--string-match (regexp str &optional num)
+  "Return NUMth match in STR matching REGEXP"
   (or num (setq num 1))
   (string-match regexp str)
   (match-string num str))
 
 
-(defun org-alert--strip-states (deadlines)
-  "Remove the todo states from DEADLINES."
+(defun org-alert--parse-entries (deadlines)
+  "Extract the time and task name of entries in DEADLINES,
+returning the result as a plist of (:time TIME :task TASK)"
   (mapcar #'(lambda (dl)
-	      (let ((ret ()))
-		(setq ret
-		      (plist-put ret :time
-				 (org-alert--string-match
-				  "\\([0-9]+:[0-9]+\\)" dl))
-		      ret
-		      (plist-put ret :task
-				 (org-alert--string-match
-				  "Scheduled: +TODO +\\(.*\\)" dl)))
-	      ret)) deadlines))
+	      (list :time
+		    (org-alert--string-match "\\([0-9]+:[0-9]+\\)" dl)
+		    :task
+		    (org-alert--string-match "Scheduled: +TODO +\\(.*\\)" dl)))
+	  deadlines))
+
 
 ;; this maps to give plists of deadlines
 ;; (:time TIME :task TASK) maybe more properties if needed idk
 ;; when the time for the notif is less than the current time plus cutoff
 ;; then below do (when (> (plist-get dl :time) (+ now cutoff)))
 
+(defun check-time (time)
+  "Check that TIME is less than current time"
+  (let* ((time (mapcar #'string-to-number (split-string time ":")))
+	 (hour (car time))
+	 (min (cadr time))
+	 (now (decode-time (current-time))))
+    (and (< (- hour (decoded-time-hour now)) 1)
+	 (< (- min (decoded-time-minute now)) org-alert-notify-cutoff))))
 
 (defun org-alert-check ()
   "Check for active, due deadlines and initiate notifications."
@@ -124,10 +133,11 @@
         (save-restriction
 	  (let ((active (org-alert--filter-active
 			 (org-alert--get-headlines))))
-	    (dolist (dl (org-alert--strip-states active))
-	      (alert
-	       (concat (plist-get dl :time) ": "
-		       (plist-get dl :task)) :title org-alert-notification-title))))))
+	    (dolist (dl (org-alert--parse-entries active))
+	      (when (check-time (plist-get dl :time))
+		(alert
+		 (concat (plist-get dl :time) ": "
+			 (plist-get dl :task)) :title org-alert-notification-title)))))))
     (when (get-buffer org-agenda-buffer-name)
       (ignore-errors
     	(with-current-buffer org-agenda-buffer-name
