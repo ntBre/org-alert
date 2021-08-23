@@ -39,12 +39,14 @@
 (require 'alert)
 (require 'org-agenda)
 
+;; TODO remove
+(setq alert-default-style 'libnotify)
 
-(defvar org-alert-interval 300
+;; TODO put back to 300
+(defvar org-alert-interval 5
   "Interval in seconds to recheck and display deadlines.")
 
-
-(defvar org-alert-notification-title "*org*"
+(defvar org-alert-notification-title "Org Agenda"
   "Title to be sent with notify-send.")
 
 (defvar org-alert-headline-regexp "\\(Sched.+:.+\\|Deadline:.+\\)"
@@ -57,9 +59,13 @@
 
 (defun org-alert--unique-headlines (regexp agenda)
   "Return unique headlines from the results of REGEXP in AGENDA."
-  (let ((matches (-distinct (-flatten (s-match-strings-all regexp agenda)))))
-    (--map (org-alert--strip-prefix it) matches)))
-
+  (let ((lst (delete-dups
+	      (mapcar #'car
+		      (s-match-strings-all
+		       org-alert-headline-regexp agenda)))))
+  (cl-loop for i = 0 then (1+ i)
+	   for elt in lst
+	   unless (cl-oddp i) collect elt)))
 
 (defun org-alert--get-headlines ()
   "Return the current org agenda as text only."
@@ -78,12 +84,34 @@
 
 (defun org-alert--filter-active (deadlines)
   "Remove any completed headings from the provided DEADLINES."
-  (-remove 'org-alert--headline-complete? deadlines))
+  (cl-remove-if-not
+   #'(lambda (str) (string-match "TODO" str)) deadlines))
+
+
+(defun org-alert--string-match (regexp str &optional num)
+  (or num (setq num 1))
+  (string-match regexp str)
+  (match-string num str))
 
 
 (defun org-alert--strip-states (deadlines)
   "Remove the todo states from DEADLINES."
-  (--map (s-trim (s-chop-prefixes org-todo-keywords-for-agenda it)) deadlines))
+  (mapcar #'(lambda (dl)
+	      (let ((ret ()))
+		(setq ret
+		      (plist-put ret :time
+				 (org-alert--string-match
+				  "\\([0-9]+:[0-9]+\\)" dl))
+		      ret
+		      (plist-put ret :task
+				 (org-alert--string-match
+				  "Scheduled: +TODO +\\(.*\\)" dl)))
+	      ret)) deadlines))
+
+;; this maps to give plists of deadlines
+;; (:time TIME :task TASK) maybe more properties if needed idk
+;; when the time for the notif is less than the current time plus cutoff
+;; then below do (when (> (plist-get dl :time) (+ now cutoff)))
 
 
 (defun org-alert-check ()
@@ -94,9 +122,12 @@
     (save-window-excursion
       (save-excursion
         (save-restriction
-          (let ((active (org-alert--filter-active (org-alert--get-headlines))))
-            (dolist (dl (org-alert--strip-states active))
-              (alert dl :title org-alert-notification-title))))))
+	  (let ((active (org-alert--filter-active
+			 (org-alert--get-headlines))))
+	    (dolist (dl (org-alert--strip-states active))
+	      (alert
+	       (concat (plist-get dl :time) ": "
+		       (plist-get dl :task)) :title org-alert-notification-title))))))
     (when (get-buffer org-agenda-buffer-name)
       (ignore-errors
     	(with-current-buffer org-agenda-buffer-name
