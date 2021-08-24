@@ -39,11 +39,7 @@
 (require 'alert)
 (require 'org-agenda)
 
-;; TODO remove
-(setq alert-default-style 'libnotify)
-
-;; TODO put back to 300
-(defvar org-alert-interval 5
+(defvar org-alert-interval 300
   "Interval in seconds to recheck and display deadlines.")
 
 (defvar org-alert-notification-title "Org Agenda"
@@ -100,28 +96,26 @@
 
 (defun org-alert--parse-entries (deadlines)
   "Extract the time and task name of entries in DEADLINES,
-returning the result as a plist of (:time TIME :task TASK)"
+returning the result as a list of (TIME TASK)"
   (mapcar #'(lambda (dl)
-	      (list :time
-		    (org-alert--string-match "\\([0-9]+:[0-9]+\\)" dl)
-		    :task
+	      (list (org-alert--string-match "\\([0-9]+:[0-9]+\\)" dl)
 		    (org-alert--string-match "Scheduled: +TODO +\\(.*\\)" dl)))
 	  deadlines))
 
 
-;; this maps to give plists of deadlines
-;; (:time TIME :task TASK) maybe more properties if needed idk
-;; when the time for the notif is less than the current time plus cutoff
-;; then below do (when (> (plist-get dl :time) (+ now cutoff)))
+(defun to-minute (hour minute)
+  "Convert HOUR and MINUTE to minutes"
+  (+ (* 60 hour) minute))
 
-(defun check-time (time)
+
+(defun check-time (time &optional now)
   "Check that TIME is less than current time"
   (let* ((time (mapcar #'string-to-number (split-string time ":")))
-	 (hour (car time))
-	 (min (cadr time))
-	 (now (decode-time (current-time))))
-    (and (< (- hour (decoded-time-hour now)) 1)
-	 (< (- min (decoded-time-minute now)) org-alert-notify-cutoff))))
+	 (now (or now (decode-time (current-time))))
+	 (now (to-minute (decoded-time-hour now) (decoded-time-minute now)))
+	 (then (to-minute (car time) (cadr time))))
+    (<= (- then now) org-alert-notify-cutoff)))
+
 
 (defun org-alert-check ()
   "Check for active, due deadlines and initiate notifications."
@@ -134,10 +128,10 @@ returning the result as a plist of (:time TIME :task TASK)"
 	  (let ((active (org-alert--filter-active
 			 (org-alert--get-headlines))))
 	    (dolist (dl (org-alert--parse-entries active))
-	      (when (check-time (plist-get dl :time))
+	      (when (and dl (check-time (car dl)))
 		(alert
-		 (concat (plist-get dl :time) ": "
-			 (plist-get dl :task)) :title org-alert-notification-title)))))))
+		 (concat (car dl) ": "
+			 (cadr dl)) :title org-alert-notification-title)))))))
     (when (get-buffer org-agenda-buffer-name)
       (ignore-errors
     	(with-current-buffer org-agenda-buffer-name
@@ -162,3 +156,8 @@ returning the result as a plist of (:time TIME :task TASK)"
 
 (provide 'org-alert)
 ;;; org-alert.el ends here
+
+;; tests
+(ert-deftest test-check-time ()
+  (should (equal (check-time "10:06" '(0 55 9 24 8 2021 2 t -18000)) nil))
+  (should (equal (check-time "10:04" '(0 55 9 24 8 2021 2 t -18000)) t)))
