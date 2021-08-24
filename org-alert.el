@@ -153,7 +153,6 @@ returning the result as a list of (TIME TASK)"
 	(cancel-timer timer))))
 
 
-
 (provide 'org-alert)
 ;;; org-alert.el ends here
 

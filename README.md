@@ -1,9 +1,11 @@
 # org-alert
 
-Provides notifications for scheduled or deadlined agenda entries.
+Provides notifications for scheduled or deadlined agenda entries. This
+is a forked version from [the original by
+spegoraro](https://github.com/spegoraro/org-alert) that checks how far
+away the events are before notifying.
 
-![Screenshot](/../screenshots/screenshot.png?raw=true "org-alert screenshot")
-
+![Screenshot](/screenshot.png?raw=true "org-alert screenshot")
 
 
 ## Command overview
